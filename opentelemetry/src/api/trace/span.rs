@@ -16,14 +16,21 @@ use std::time::SystemTime;
 // Vendors may implement the `Span` interface to effect vendor-specific logic. However, alternative
 // implementations MUST NOT allow callers to create Spans directly. All `Span`s MUST be created
 // via a Tracer.
-pub trait Span {
+pub trait Span<'a> {
+    type Children: Iterator<Item = &'a u64>;
+    type Follows: Iterator<Item = &'a u64>;
+
+    fn id(&self) -> u64;
+    fn parent(&self) -> Option<u64>;
+    fn children(&'a self) -> Self::Children;
+    fn follows_from(&'a self) -> Self::Follows;
     fn add_event(&mut self, message: String);
     fn add_event_with_timestamp(&mut self, message: String, timestamp: SystemTime);
 
     // Returns the `SpanContext` for the given `Span`. The returned value may be used even after
     // the `Span is finished. The returned value MUST be the same for the entire `Span` lifetime.
     // This MAY be called GetContext.
-    fn get_context(&self) -> api::SpanContext;
+    fn get_context(&'a self) -> &'a api::SpanContext;
 
     // Returns true if this `Span` is recording information like events with the `add_event`
     // operation, attributes using `set_attributes`, status with `set_status`, etc.
@@ -43,6 +50,20 @@ pub trait Span {
     // never access `SampledFlag` unless used in context propagators.
     fn is_recording(&self) -> bool;
 
-    fn set_attribute(&mut self, key: String, value: String);
+    fn set_attribute(&mut self, attribute: crate::KeyValue);
     fn end(&mut self);
 }
+
+//pub struct Current {
+//    inner: CurrentInner,
+//}
+//
+//#[derive(Debug)]
+//enum CurrentInner {
+//    Current {
+//        id: u64,
+//        context: SpanContext,
+//    },
+//    None,
+//    Unknown,
+//}

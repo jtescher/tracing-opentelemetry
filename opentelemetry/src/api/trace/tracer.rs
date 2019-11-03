@@ -16,8 +16,8 @@
 use crate::api;
 use std::sync::{Arc, Mutex};
 
-pub trait Tracer {
-    type Span: api::Span;
+pub trait Tracer<'span> {
+    type Span: api::Span<'span>;
 
     // Starts a new span.
     //
@@ -32,6 +32,18 @@ pub trait Tracer {
     ) -> Arc<Mutex<Self::Span>>
     where
         ParentSpan: Into<api::SpanContext>;
+
+    fn with_span<S, F>(&self, name: S, f: F)
+    where
+        S: Into<String>,
+        F: FnOnce(Arc<Mutex<Self::Span>>),
+    {
+        // TODO: use active as parent, fix lifetimes...
+        let context: Option<api::SpanContext> = None;
+        let span = self.start(name.into(), context);
+
+        f(span)
+    }
 
     // Returns the current active span.
     //

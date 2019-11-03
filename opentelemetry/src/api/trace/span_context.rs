@@ -9,7 +9,7 @@
 // The spec can be viewed here: https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/api-tracing.md#spancontext
 //
 // [w3c TraceContext specification]: https://www.w3.org/TR/trace-context/
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SpanContext {
     trace_id: u128,
     span_id: u64,

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct NoopTracer {}
 
-impl api::Tracer for NoopTracer {
+impl<'a> api::Tracer<'a> for NoopTracer {
     type Span = api::NoopSpan;
     fn start<ParentSpan>(
         &self,
@@ -13,15 +13,15 @@ impl api::Tracer for NoopTracer {
     where
         ParentSpan: Into<api::SpanContext>,
     {
-        Arc::new(Mutex::new(api::NoopSpan {}))
+        Arc::new(Mutex::new(api::NoopSpan::new()))
     }
 
     fn get_active_span(&self) -> Arc<Mutex<Self::Span>> {
-        Arc::new(Mutex::new(api::NoopSpan {}))
+        Arc::new(Mutex::new(api::NoopSpan::new()))
     }
 
     fn get_span_by_id(&self, _span_id: u64) -> Arc<Mutex<Self::Span>> {
-        Arc::new(Mutex::new(api::NoopSpan {}))
+        Arc::new(Mutex::new(api::NoopSpan::new()))
     }
 
     fn mark_span_as_active(&self, _span_id: u64) {

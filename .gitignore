@@ -1,3 +1,4 @@
 /target
+/opentelemetry/target
 **/*.rs.bk
 Cargo.lock

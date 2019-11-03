@@ -4,6 +4,7 @@ extern crate tracing;
 use std::{self, thread, time::Duration};
 use tracing_attributes::instrument;
 use tracing_opentelemetry::subscriber::OpentelemetrySubscriber;
+use tracing_subscriber::{EnvFilter, Layer};
 
 #[instrument]
 #[inline]
@@ -17,10 +18,10 @@ fn expensive_work() -> String {
 }
 
 fn main() {
-    env_logger::init();
-    let subscriber = OpentelemetrySubscriber::<opentelemetry::jaeger::JaegerTracer>::builder()
+    let opentelemetry = OpentelemetrySubscriber::<opentelemetry::jaeger::JaegerTracer>::builder()
         .with_tracer(opentelemetry::jaeger::JaegerTracer::new("report_example"))
         .init();
+    let subscriber = EnvFilter::from_default_env().with_subscriber(opentelemetry);
 
     tracing::subscriber::with_default(subscriber, || {
         let root = span!(tracing::Level::TRACE, "app_start", work_units = 2);

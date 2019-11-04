@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate tracing;
 
+use opentelemetry::sdk;
+use std::sync::Arc;
 use std::{self, thread, time::Duration};
 use tracing_attributes::instrument;
 use tracing_opentelemetry::subscriber::OpentelemetrySubscriber;
@@ -18,8 +20,9 @@ fn expensive_work() -> String {
 }
 
 fn main() {
-    let opentelemetry = OpentelemetrySubscriber::<opentelemetry::jaeger::JaegerTracer>::builder()
-        .with_tracer(opentelemetry::jaeger::JaegerTracer::new("report_example"))
+    let tracer = sdk::Tracer::new("report_example");
+    let opentelemetry = OpentelemetrySubscriber::<sdk::Tracer>::builder()
+        .with_tracer(Arc::new(tracer))
         .init();
     let subscriber = EnvFilter::from_default_env().with_subscriber(opentelemetry);
 
@@ -37,5 +40,5 @@ fn main() {
     });
 
     // Allow flush
-    thread::sleep(Duration::from_millis(250));
+    thread::sleep(Duration::from_millis(250))
 }

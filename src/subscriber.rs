@@ -32,7 +32,7 @@ struct SpanAttributeVisitor<S: api::Span>(Arc<Mutex<S>>);
 impl<S: api::Span> field::Visit for SpanAttributeVisitor<S> {
     fn record_debug(&mut self, field: &field::Field, value: &dyn fmt::Debug) {
         let _ = self.0.try_lock().map(|mut span| {
-            span.set_attribute(opentelemetry::Key::new(field.name()).string(format!("{:?}", value)))
+            span.set_attribute(api::Key::new(field.name()).string(format!("{:?}", value)))
         });
     }
 }
@@ -49,6 +49,7 @@ impl<T: api::Tracer> OpentelemetrySubscriber<T> {
                 .try_lock()
                 .map(|span| span.get_context())
                 .ok()
+                .filter(|context| context.is_valid())
         } else {
             None
         }
@@ -129,7 +130,7 @@ impl<T: api::Tracer + 'static> Subscriber for OpentelemetrySubscriber<T> {
         let span_context = self.parse_context(span_attributes);
         let started = self
             .tracer
-            .start(span_attributes.metadata().name().to_string(), span_context);
+            .start(span_attributes.metadata().name(), span_context);
 
         let span_id = started.get_context().span_id();
         let span = Arc::new(Mutex::new(started));

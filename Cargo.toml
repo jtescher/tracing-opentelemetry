@@ -5,10 +5,10 @@ authors = ["Julian Tescher <julian@tescher.me>"]
 edition = "2018"
 
 [dependencies]
-opentelemetry = "0.1.2"
+opentelemetry = { git = "https://github.com/jtescher/opentelemetry-rust" }
 rand = "0.7.2"
 tracing-core = "0.1.7"
-tracing-subscriber = "0.1.5"
+tracing-subscriber = { version = "0.1.5", git = "https://github.com/tokio-rs/tracing/" }
 
 [dev-dependencies]
 tracing = "0.1.10"

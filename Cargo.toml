@@ -5,13 +5,11 @@ authors = ["Julian Tescher <julian@tescher.me>"]
 edition = "2018"
 
 [dependencies]
-opentelemetry = { path = "opentelemetry" }
+opentelemetry = "0.1.2"
 rand = "0.7.2"
 tracing-core = "0.1.7"
 tracing-subscriber = "0.1.5"
 
 [dev-dependencies]
-env_logger = "0.7.1"
-log = "0.4.8"
 tracing = "0.1.10"
 tracing-attributes = "0.1.5"

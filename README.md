@@ -19,13 +19,19 @@ Examples
 #[macro_use]
 extern crate tracing;
 
+use opentelemetry::sdk;
+use std::sync::Arc;
 use tracing_opentelemetry::subscriber::OpentelemetrySubscriber;
 
+// Create a new tracer
+let tracer = Arc::new(sdk::Tracer::new("service_name"));
+
 // Create a new tracing subscriber
-let subscriber = OpentelemetrySubscriber::<opentelemetry::jaeger::JaegerTracer>::builder()
-    .with_tracer(opentelemetry::jaeger::JaegerTracer::new("service_name"))
+let subscriber = OpentelemetrySubscriber::<sdk::Tracer>::builder()
+    .with_tracer(tracer)
     .init();
 
+// Trace executed code
 tracing::subscriber::with_default(subscriber, || {
     let root = span!(tracing::Level::TRACE, "app_start", work_units = 2);
     let _enter = root.enter();

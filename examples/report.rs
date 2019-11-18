@@ -3,11 +3,10 @@ extern crate tracing;
 
 use opentelemetry::api::Provider;
 use opentelemetry::sdk;
-use std::sync::Arc;
-use std::{self, thread, time::Duration};
+use std::{thread, time::Duration};
 use tracing_attributes::instrument;
-use tracing_opentelemetry::subscriber::OpentelemetrySubscriber;
-use tracing_subscriber::{EnvFilter, Layer};
+use tracing_opentelemetry::OpentelemetryLayer;
+use tracing_subscriber::{Layer, Registry};
 
 #[instrument]
 #[inline]
@@ -22,10 +21,8 @@ fn expensive_work() -> String {
 
 fn main() {
     let tracer = sdk::Provider::default().get_tracer("report_example");
-    let opentelemetry = OpentelemetrySubscriber::<sdk::Tracer>::builder()
-        .with_tracer(Arc::new(tracer))
-        .init();
-    let subscriber = EnvFilter::from_default_env().with_subscriber(opentelemetry);
+    let opentelemetry = OpentelemetryLayer::with_tracer(tracer);
+    let subscriber = opentelemetry.with_subscriber(Registry::default());
 
     tracing::subscriber::with_default(subscriber, || {
         let root = span!(tracing::Level::INFO, "app_start", work_units = 2);

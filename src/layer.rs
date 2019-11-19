@@ -1,4 +1,4 @@
-use opentelemetry::{api, api::Span};
+use opentelemetry::api::{self, Provider, Span, Tracer};
 use std::fmt;
 use tracing_core::span::{self, Attributes, Id, Record};
 use tracing_core::{field, Event, Subscriber};
@@ -43,16 +43,23 @@ impl<T: api::Tracer + 'static> OpentelemetryLayer<T> {
             extensions
                 .get::<T::Span>()
                 .map(|otel_span| otel_span.get_context())
-                .filter(|otel_ctx| otel_ctx.is_valid())
         } else if attrs.is_contextual() {
-            ctx.current_span().id().and_then(|span_id| {
-                let span = ctx.span(span_id).expect("Span not found, this is a bug");
-                let extensions = span.extensions();
-                extensions
-                    .get::<T::Span>()
-                    .map(|otel_span| otel_span.get_context())
-                    .filter(|otel_ctx| otel_ctx.is_valid())
-            })
+            ctx.current_span()
+                .id()
+                .and_then(|span_id| {
+                    let span = ctx.span(span_id).expect("Span not found, this is a bug");
+                    let extensions = span.extensions();
+                    extensions
+                        .get::<T::Span>()
+                        .map(|otel_span| otel_span.get_context())
+                })
+                .or_else(|| {
+                    let ctx = opentelemetry::global::trace_provider()
+                        .get_tracer("tracing-opentelemetry")
+                        .get_active_span()
+                        .get_context();
+                    Some(ctx)
+                })
         } else {
             None
         }

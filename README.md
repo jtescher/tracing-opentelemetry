@@ -1,5 +1,9 @@
 # Tracing Opentelemetry
 
+[![Crates.io: tracing-opentelemetry](https://img.shields.io/crates/v/tracing-opentelemetry.svg)](https://crates.io/crates/tracing-opentelemetry)
+[![Documentation](https://docs.rs/tracing-opentelemetry/badge.svg)](https://docs.rs/tracing-opentelemetry)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)
+
 An opentelemetry layer for the [tracing] library.
 
 [tracing]: https://github.com/tokio-rs/tracing

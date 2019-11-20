@@ -1,6 +1,6 @@
 # Tracing Opentelemetry
 
-An opentelemetry subscriber for the [tracing] library.
+An opentelemetry layer for the [tracing] library.
 
 [tracing]: https://github.com/tokio-rs/tracing
 

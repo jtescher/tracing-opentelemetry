@@ -2,6 +2,13 @@
 name = "tracing-opentelemetry"
 version = "0.1.0"
 authors = ["Julian Tescher <julian@tescher.me>"]
+description = "OpenTelemetry integration for tracing"
+homepage = "https://github.com/jtescher/tracing-opentelemetry"
+repository = "https://github.com/jtescher/tracing-opentelemetry"
+readme = "README.md"
+categories = ["development-tools::debugging"]
+keywords = ["tracing", "opentelemetry", "jaeger", "prometheus"]
+license = "MIT"
 edition = "2018"
 
 [dependencies]

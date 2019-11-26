@@ -1,8 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
-use opentelemetry::api::Provider;
-use opentelemetry::sdk;
+use opentelemetry::{api::{Provider, Sampler}, exporter::trace::jaeger, global, sdk};
 use std::{thread, time::Duration};
 use tracing_attributes::instrument;
 use tracing_opentelemetry::OpentelemetryLayer;
@@ -19,8 +18,27 @@ fn expensive_work() -> String {
     format!("success")
 }
 
+fn init_tracer() {
+    let exporter = jaeger::Exporter::builder()
+        .with_collector_endpoint("127.0.0.1:6831".parse().unwrap())
+        .with_process(jaeger::Process {
+            service_name: "report_example",
+            tags: Vec::new(),
+        })
+        .init();
+    let provider = sdk::Provider::builder()
+        .with_exporter(exporter)
+        .with_config(sdk::Config {
+            default_sampler: Sampler::Always,
+            ..Default::default()
+        })
+        .build();
+    global::set_provider(provider);
+}
+
 fn main() {
-    let tracer = sdk::Provider::default().get_tracer("report_example");
+    init_tracer();
+    let tracer = global::trace_provider().get_tracer("tracing");
     let opentelemetry = OpentelemetryLayer::with_tracer(tracer);
     let subscriber = opentelemetry.with_subscriber(Registry::default());
 

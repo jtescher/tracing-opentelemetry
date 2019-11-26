@@ -29,7 +29,7 @@ use tracing_subscriber::{Layer, Registry};
 
 fn main() {
     // Create a new tracer
-    let tracer = sdk::Provider::default().get_tracer("service_name");
+    let tracer = sdk::Provider::default().get_tracer("component_name");
 
     // Create a new tracing layer
     let layer = OpentelemetryLayer::with_tracer(tracer);

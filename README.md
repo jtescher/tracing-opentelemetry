@@ -10,9 +10,9 @@ An opentelemetry layer for the [tracing] library.
 
 ## Tracers
 
-Currently supports the Jaeger tracer via [rustracing_jaeger]
+Currently supports the Jaeger exporter via [opentelemetry-jaeger].
 
-[rustracing_jaeger]: https://github.com/sile/rustracing_jaeger
+[opentelemetry-jaeger]: https://github.com/open-telemetry/opentelemetry-rust/tree/master/opentelemetry-jaeger
 
 Examples
 --------

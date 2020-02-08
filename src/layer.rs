@@ -1,4 +1,4 @@
-use opentelemetry::api::{self, Provider, Span, Tracer};
+use opentelemetry::api::{self, Span};
 use std::fmt;
 use tracing_core::span::{self, Attributes, Id, Record};
 use tracing_core::{field, Event, Subscriber};
@@ -55,22 +55,13 @@ impl<T: api::Tracer + 'static> OpentelemetryLayer<T> {
                 .map(|otel_span| otel_span.get_context())
         // Else if the span is inferred from context, look up any available current span.
         } else if attrs.is_contextual() {
-            ctx.current_span()
-                .id()
-                .and_then(|span_id| {
-                    let span = ctx.span(span_id).expect("Span not found, this is a bug");
-                    let extensions = span.extensions();
-                    extensions
-                        .get::<T::Span>()
-                        .map(|otel_span| otel_span.get_context())
-                })
-                .or_else(|| {
-                    let ctx = opentelemetry::global::trace_provider()
-                        .get_tracer("tracing-opentelemetry")
-                        .get_active_span()
-                        .get_context();
-                    Some(ctx)
-                })
+            ctx.current_span().id().and_then(|span_id| {
+                let span = ctx.span(span_id).expect("Span not found, this is a bug");
+                let extensions = span.extensions();
+                extensions
+                    .get::<T::Span>()
+                    .map(|otel_span| otel_span.get_context())
+            })
         // Explicit root spans should have no parent context.
         } else {
             None
@@ -81,23 +72,23 @@ impl<T: api::Tracer + 'static> OpentelemetryLayer<T> {
     /// and track `Span`s.
     ///
     /// ```rust,no_run
-    /// use opentelemetry::{api::{Sampler, Key, Provider}, exporter::trace::jaeger, global, sdk};
+    /// use opentelemetry::{api::Provider, global, sdk};
     /// use tracing_opentelemetry::OpentelemetryLayer;
     ///
     /// // Create a jaeger exporter for a `trace-demo` service.
-    /// let exporter = jaeger::Exporter::builder()
-    ///     .with_collector_endpoint("127.0.0.1:6831".parse().unwrap())
-    ///     .with_process(jaeger::Process {
-    ///         service_name: "trace-demo",
+    /// let exporter = opentelemetry_jaeger::Exporter::builder()
+    ///     .with_agent_endpoint("127.0.0.1:6831".parse().unwrap())
+    ///     .with_process(opentelemetry_jaeger::Process {
+    ///         service_name: "trace_demo".to_string(),
     ///         tags: Vec::new(),
     ///     })
-    ///     .init();
+    ///     .init().expect("Error initializing Jaeger exporter");
     ///
     /// // Build a provider from the jaeger exporter that always samples.
     /// let provider = sdk::Provider::builder()
-    ///     .with_exporter(exporter)
+    ///     .with_simple_exporter(exporter)
     ///     .with_config(sdk::Config {
-    ///         default_sampler: Sampler::Always,
+    ///         default_sampler: Box::new(sdk::Sampler::Always),
     ///         ..Default::default()
     ///     })
     ///     .build();

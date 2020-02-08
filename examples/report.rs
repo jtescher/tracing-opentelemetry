@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
-use opentelemetry::{api::{Provider, Sampler}, exporter::trace::jaeger, global, sdk};
+use opentelemetry::{api::Provider, global, sdk};
 use std::{thread, time::Duration};
 use tracing_attributes::instrument;
 use tracing_opentelemetry::OpentelemetryLayer;
@@ -18,26 +18,28 @@ fn expensive_work() -> String {
     format!("success")
 }
 
-fn init_tracer() {
-    let exporter = jaeger::Exporter::builder()
-        .with_collector_endpoint("127.0.0.1:6831".parse().unwrap())
-        .with_process(jaeger::Process {
-            service_name: "report_example",
+fn init_tracer() -> thrift::Result<()> {
+    let exporter = opentelemetry_jaeger::Exporter::builder()
+        .with_agent_endpoint("127.0.0.1:6831".parse().unwrap())
+        .with_process(opentelemetry_jaeger::Process {
+            service_name: "report_example".to_string(),
             tags: Vec::new(),
         })
-        .init();
+        .init()?;
     let provider = sdk::Provider::builder()
-        .with_exporter(exporter)
+        .with_simple_exporter(exporter)
         .with_config(sdk::Config {
-            default_sampler: Sampler::Always,
+            default_sampler: Box::new(sdk::Sampler::Always),
             ..Default::default()
         })
         .build();
     global::set_provider(provider);
+
+    Ok(())
 }
 
-fn main() {
-    init_tracer();
+fn main() -> thrift::Result<()> {
+    init_tracer()?;
     let tracer = global::trace_provider().get_tracer("tracing");
     let opentelemetry = OpentelemetryLayer::with_tracer(tracer);
     let subscriber = opentelemetry.with_subscriber(Registry::default());
@@ -56,5 +58,7 @@ fn main() {
     });
 
     // Allow flush
-    thread::sleep(Duration::from_millis(250))
+    thread::sleep(Duration::from_millis(250));
+
+    Ok(())
 }

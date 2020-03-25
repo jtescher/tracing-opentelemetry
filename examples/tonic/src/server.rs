@@ -54,7 +54,13 @@ fn tracing_init() -> Result<(), Box<dyn std::error::Error>> {
     let tracer = provider.get_tracer("my-tracer");
     let opentelemetry = OpenTelemetryLayer::with_tracer(tracer);
 
-    let subscriber = opentelemetry.with_subscriber(Registry::default());
+    let subscriber = Registry::default()
+         // add the OpenTelemetry subscriber layer
+        .with(opentelemetry)
+         // add a logging layer
+        .with(tracing_subscriber::fmt::Layer::default())
+         // add RUST_LOG-based filtering
+        .with(tracing_subscriber::EnvFilter::from_default_env());
     tracing::subscriber::set_global_default(subscriber)?;
     global::set_provider(provider);
 

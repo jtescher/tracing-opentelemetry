@@ -5,8 +5,8 @@ use opentelemetry::api::{HttpTextFormat, Provider};
 use opentelemetry::{api, global};
 use std::collections::HashMap;
 use tracing_opentelemetry::{OpenTelemetryLayer, OpenTelemetrySpanExt};
-use tracing_subscriber::{Layer, Registry};
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Layer, Registry};
 
 fn make_request(_span_context: api::SpanContext) {
     // perform external request after injecting context

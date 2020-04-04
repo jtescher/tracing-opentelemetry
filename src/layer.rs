@@ -47,10 +47,12 @@ pub(crate) fn build_context(builder: &mut api::SpanBuilder) -> api::SpanContext 
         .parent_context
         .as_ref()
         .map(|parent_context| (parent_context.trace_id(), parent_context.trace_flags()))
-        .unwrap_or((
-            builder.trace_id.expect("trace_id should exist"),
-            api::TRACE_FLAG_SAMPLED,
-        ));
+        .unwrap_or_else(|| {
+            (
+                builder.trace_id.expect("trace_id should exist"),
+                api::TRACE_FLAG_SAMPLED,
+            )
+        });
 
     api::SpanContext::new(trace_id, span_id, trace_flags, false)
 }

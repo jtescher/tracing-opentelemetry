@@ -52,7 +52,8 @@ fn tracing_init() -> Result<(), Box<dyn std::error::Error>> {
         })
         .build();
 
-    let tracer = provider.get_tracer("my-tracer");
+    opentelemetry::global::set_provider(provider);
+    let tracer = opentelemetry::global::trace_provider().get_tracer("my-tracer");
     let telemetry = OpenTelemetryLayer::with_tracer(tracer);
 
     let subscriber = Registry::default()

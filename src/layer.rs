@@ -1,4 +1,6 @@
 use opentelemetry::api;
+use opentelemetry::api::{Span, Tracer};
+use opentelemetry::global::{BoxedSpan, BoxedTracer};
 use std::any::TypeId;
 use std::fmt;
 use std::marker;
@@ -6,14 +8,14 @@ use std::time::SystemTime;
 use tracing_core::span::{self, Attributes, Id, Record};
 use tracing_core::{field, Event, Subscriber};
 use tracing_subscriber::layer::Context;
-use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::registry::{ExtensionsMut, LookupSpan};
 use tracing_subscriber::Layer;
 
 /// OpenTelemetry layer for use in a project that uses [tracing].
 ///
 /// [tracing]: https://github.com/tokio-rs/tracing
-pub struct OpenTelemetryLayer<S, T: api::Tracer> {
-    tracer: T,
+pub struct OpenTelemetryLayer<S> {
+    tracer: BoxedTracer,
 
     get_context: WithContext,
     _registry: marker::PhantomData<S>,
@@ -25,7 +27,7 @@ pub struct OpenTelemetryLayer<S, T: api::Tracer> {
 //
 // See https://github.com/tokio-rs/tracing/blob/4dad420ee1d4607bad79270c1520673fa6266a3d/tracing-error/src/layer.rs
 pub(crate) struct WithContext(
-    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&mut api::SpanBuilder)),
+    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&BoxedTracer, ExtensionsMut<'_>)),
 );
 
 impl WithContext {
@@ -35,26 +37,39 @@ impl WithContext {
         &self,
         dispatch: &'a tracing::Dispatch,
         id: &span::Id,
-        mut f: impl FnMut(&mut api::SpanBuilder),
+        mut f: impl FnMut(&BoxedTracer, ExtensionsMut<'_>),
     ) {
         (self.0)(dispatch, id, &mut f)
     }
 }
 
-pub(crate) fn build_context(builder: &mut api::SpanBuilder) -> api::SpanContext {
-    let span_id = builder.span_id.expect("Builders must have id");
-    let (trace_id, trace_flags) = builder
-        .parent_context
-        .as_ref()
-        .map(|parent_context| (parent_context.trace_id(), parent_context.trace_flags()))
-        .unwrap_or_else(|| {
-            (
-                builder.trace_id.expect("trace_id should exist"),
-                api::TRACE_FLAG_SAMPLED,
-            )
-        });
+pub(crate) enum Either<T1, T2> {
+    Left(T1),
+    Right(T2),
+}
 
-    api::SpanContext::new(trace_id, span_id, trace_flags, false)
+pub(crate) fn build_context(tracer: &BoxedTracer, mut ext: ExtensionsMut<'_>) -> api::SpanContext {
+    match ext.get_mut::<Either<api::SpanBuilder, BoxedSpan>>() {
+        Some(Either::Left(builder)) => {
+            let span_id = builder.span_id.expect("Builders must have id");
+
+            // Ensure builder has parent, else convert to span to ensure correct sampling behavior
+            match builder.parent_context {
+                Some(ref parent) => {
+                    api::SpanContext::new(parent.trace_id(), span_id, parent.trace_flags(), false)
+                }
+                None => {
+                    let span = tracer.build(builder.clone());
+                    let context = span.get_context();
+                    ext.replace::<Either<api::SpanBuilder, BoxedSpan>>(Either::Right(span));
+
+                    context
+                }
+            }
+        }
+        Some(Either::Right(span)) => span.get_context(),
+        None => api::SpanContext::empty_context(),
+    }
 }
 
 struct SpanEventVisitor<'a>(&'a mut api::Event);
@@ -72,24 +87,28 @@ impl<'a> field::Visit for SpanEventVisitor<'a> {
     }
 }
 
-struct SpanAttributeVisitor<'a>(&'a mut api::SpanBuilder);
+struct SpanAttributeVisitor<'a>(&'a mut Either<api::SpanBuilder, BoxedSpan>);
 
 impl<'a> field::Visit for SpanAttributeVisitor<'a> {
     /// Set attributes on the underlying OpenTelemetry `Span`.
     fn record_debug(&mut self, field: &field::Field, value: &dyn fmt::Debug) {
         let attribute = api::Key::new(field.name()).string(format!("{:?}", value));
-        if let Some(attributes) = &mut self.0.attributes {
-            attributes.push(attribute);
-        } else {
-            self.0.attributes = Some(vec![attribute]);
+        match self.0 {
+            Either::Left(ref mut builder) => {
+                if let Some(ref mut attributes) = builder.attributes {
+                    attributes.push(attribute);
+                } else {
+                    builder.attributes = Some(vec![attribute]);
+                }
+            }
+            Either::Right(ref mut span) => span.set_attribute(attribute),
         }
     }
 }
 
-impl<S, T> OpenTelemetryLayer<S, T>
+impl<S> OpenTelemetryLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
-    T: api::Tracer + 'static,
 {
     /// Retrieve the parent OpenTelemetry [`SpanContext`] from the current
     /// tracing [`span`] through the [`Registry`]. This [`SpanContext`]
@@ -102,14 +121,12 @@ where
         // If a span is specified, it _should_ exist in the underlying `Registry`.
         if let Some(parent) = attrs.parent() {
             let span = ctx.span(parent).expect("Span not found, this is a bug");
-            let mut extensions = span.extensions_mut();
-            extensions.get_mut::<api::SpanBuilder>().map(build_context)
+            Some(build_context(&self.tracer, span.extensions_mut()))
         // Else if the span is inferred from context, look up any available current span.
         } else if attrs.is_contextual() {
-            ctx.current_span().id().and_then(|span_id| {
+            ctx.current_span().id().map(|span_id| {
                 let span = ctx.span(span_id).expect("Span not found, this is a bug");
-                let mut extensions = span.extensions_mut();
-                extensions.get_mut::<api::SpanBuilder>().map(build_context)
+                build_context(&self.tracer, span.extensions_mut())
             })
         // Explicit root spans should have no parent context.
         } else {
@@ -155,7 +172,7 @@ where
     /// let _subscriber = Registry::default()
     ///     .with(otel_layer);
     /// ```
-    pub fn with_tracer(tracer: T) -> Self {
+    pub fn with_tracer(tracer: BoxedTracer) -> Self {
         OpenTelemetryLayer {
             tracer,
             get_context: WithContext(Self::get_context),
@@ -166,7 +183,7 @@ where
     fn get_context(
         dispatch: &tracing::Dispatch,
         id: &span::Id,
-        f: &mut dyn FnMut(&mut api::SpanBuilder),
+        f: &mut dyn FnMut(&BoxedTracer, ExtensionsMut<'_>),
     ) {
         let subscriber = dispatch
             .downcast_ref::<S>()
@@ -175,17 +192,16 @@ where
             .span(id)
             .expect("registry should have a span for the current ID");
 
-        let mut extensions = span.extensions_mut();
-        if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
-            f(builder);
-        }
+        f(
+            &dispatch.downcast_ref::<Self>().unwrap().tracer,
+            span.extensions_mut(),
+        );
     }
 }
 
-impl<S, T> Layer<S> for OpenTelemetryLayer<S, T>
+impl<S> Layer<S> for OpenTelemetryLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
-    T: api::Tracer + 'static,
 {
     /// Creates an `OpenTelemetry` `Span` for the corresponding `tracing` `Span`.
     /// This will attempt to parse the parent context if possible from the given attributes.
@@ -205,16 +221,17 @@ where
         if builder.parent_context.is_none() {
             builder.trace_id = Some(api::TraceId::from_u128(rand::random()));
         }
+        let mut either: Either<api::SpanBuilder, BoxedSpan> = Either::Left(builder);
 
-        attrs.record(&mut SpanAttributeVisitor(&mut builder));
-        extensions.insert(builder);
+        attrs.record(&mut SpanAttributeVisitor(&mut either));
+        extensions.insert(either);
     }
 
     /// Record values for the given span.
     fn on_record(&self, id: &Id, values: &Record<'_>, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
+        if let Some(builder) = extensions.get_mut::<Either<api::SpanBuilder, BoxedSpan>>() {
             values.record(&mut SpanAttributeVisitor(builder));
         }
     }
@@ -225,7 +242,7 @@ where
         if let Some(span_id) = ctx.current_span().id() {
             let span = ctx.span(span_id).expect("Span not found, this is a bug");
             let mut extensions = span.extensions_mut();
-            if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
+            if let Some(either) = extensions.get_mut::<Either<api::SpanBuilder, BoxedSpan>>() {
                 let mut otel_event = api::Event::new(
                     String::new(),
                     SystemTime::now(),
@@ -237,10 +254,15 @@ where
 
                 event.record(&mut SpanEventVisitor(&mut otel_event));
 
-                if let Some(ref mut events) = builder.message_events {
-                    events.push(otel_event);
-                } else {
-                    builder.message_events = Some(vec![otel_event]);
+                match either {
+                    Either::Left(ref mut builder) => {
+                        if let Some(ref mut events) = builder.message_events {
+                            events.push(otel_event);
+                        } else {
+                            builder.message_events = Some(vec![otel_event]);
+                        }
+                    }
+                    Either::Right(span) => span.add_event(otel_event.name, otel_event.attributes),
                 }
             }
         };
@@ -250,9 +272,14 @@ where
     fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
         let span = ctx.span(&id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        if let Some(builder) = extensions.remove::<api::SpanBuilder>() {
-            // Assign end time, build and start span, drop span to export
-            builder.with_end_time(SystemTime::now()).start(&self.tracer);
+        if let Some(either) = extensions.remove::<Either<api::SpanBuilder, BoxedSpan>>() {
+            match either {
+                Either::Left(builder) => {
+                    // Assign end time, build and start span, drop span to export
+                    builder.with_end_time(SystemTime::now()).start(&self.tracer);
+                }
+                Either::Right(span) => span.end(),
+            }
         }
     }
 

@@ -1,5 +1,6 @@
-use crate::layer::{build_context, WithContext};
+use crate::layer::{build_context, Either, WithContext};
 use opentelemetry::api;
+use opentelemetry::global::BoxedSpan;
 
 /// `OpenTelemetrySpanExt` allows tracing spans to accept and return
 /// OpenTelemetry `SpanContext`s.
@@ -64,8 +65,12 @@ impl OpenTelemetrySpanExt for tracing::Span {
         self.with_subscriber(move |(id, subscriber)| {
             let mut parent_context = Some(parent_context);
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, move |builder| {
-                    builder.parent_context = parent_context.take()
+                get_context.with_context(subscriber, id, move |_tracer, mut extensions| {
+                    if let Some(Either::Left(builder)) =
+                        extensions.get_mut::<Either<api::SpanBuilder, BoxedSpan>>()
+                    {
+                        builder.parent_context = parent_context.take()
+                    }
                 });
             }
         });
@@ -75,8 +80,8 @@ impl OpenTelemetrySpanExt for tracing::Span {
         let mut span_context = None;
         self.with_subscriber(|(id, subscriber)| {
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, |builder| {
-                    span_context = Some(build_context(builder));
+                get_context.with_context(subscriber, id, |tracer, extensions| {
+                    span_context = Some(build_context(tracer, extensions))
                 })
             }
         });

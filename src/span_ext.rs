@@ -64,7 +64,7 @@ impl OpenTelemetrySpanExt for tracing::Span {
         self.with_subscriber(move |(id, subscriber)| {
             let mut parent_context = Some(parent_context);
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, move |builder| {
+                get_context.with_context(subscriber, id, move |builder, _sampler| {
                     builder.parent_context = parent_context.take()
                 });
             }
@@ -75,8 +75,8 @@ impl OpenTelemetrySpanExt for tracing::Span {
         let mut span_context = None;
         self.with_subscriber(|(id, subscriber)| {
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, |builder| {
-                    span_context = Some(build_context(builder));
+                get_context.with_context(subscriber, id, |builder, sampler| {
+                    span_context = Some(build_context(builder, sampler));
                 })
             }
         });

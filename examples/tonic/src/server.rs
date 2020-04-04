@@ -44,16 +44,17 @@ fn tracing_init() -> Result<(), Box<dyn std::error::Error>> {
     let batch =
         sdk::BatchSpanProcessor::builder(exporter, tokio::spawn, tokio::time::interval).build();
 
+    let sampler = Sampler::Always;
     let provider = sdk::Provider::builder()
         .with_batch_exporter(batch)
         .with_config(sdk::Config {
-            default_sampler: Box::new(Sampler::Always),
+            default_sampler: Box::new(sampler),
             ..Default::default()
         })
         .build();
 
     let tracer = provider.get_tracer("my-tracer");
-    let telemetry = OpenTelemetryLayer::with_tracer(tracer);
+    let telemetry = OpenTelemetryLayer::new(tracer, sampler);
 
     let subscriber = Registry::default()
         // add the OpenTelemetry subscriber layer

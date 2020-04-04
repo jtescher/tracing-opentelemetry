@@ -2,11 +2,12 @@
 extern crate tracing;
 
 use opentelemetry::api::{HttpTextFormat, Provider};
+use opentelemetry::sdk::Sampler;
 use opentelemetry::{api, global};
 use std::collections::HashMap;
 use tracing_opentelemetry::{OpenTelemetryLayer, OpenTelemetrySpanExt};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{Layer, Registry};
+use tracing_subscriber::Registry;
 
 fn make_request(_span_context: api::SpanContext) {
     // perform external request after injecting context
@@ -26,7 +27,7 @@ fn build_example_carrier() -> HashMap<&'static str, String> {
 
 fn main() {
     let tracer = global::trace_provider().get_tracer("example");
-    let opentelemetry = OpenTelemetryLayer::with_tracer(tracer);
+    let opentelemetry = OpenTelemetryLayer::new(tracer, Sampler::Always);
     let subscriber = Registry::default().with(opentelemetry);
 
     // Propagator can be swapped with trace context propagator binary propagator, etc.

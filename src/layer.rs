@@ -14,6 +14,7 @@ use tracing_subscriber::Layer;
 /// [tracing]: https://github.com/tokio-rs/tracing
 pub struct OpenTelemetryLayer<S, T: api::Tracer> {
     tracer: T,
+    sampler: Box<dyn api::Sampler>,
 
     get_context: WithContext,
     _registry: marker::PhantomData<S>,
@@ -24,8 +25,9 @@ pub struct OpenTelemetryLayer<S, T: api::Tracer> {
 // types at the callsite.
 //
 // See https://github.com/tokio-rs/tracing/blob/4dad420ee1d4607bad79270c1520673fa6266a3d/tracing-error/src/layer.rs
+#[allow(clippy::type_complexity)]
 pub(crate) struct WithContext(
-    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&mut api::SpanBuilder)),
+    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&mut api::SpanBuilder, &dyn api::Sampler)),
 );
 
 impl WithContext {
@@ -35,23 +37,46 @@ impl WithContext {
         &self,
         dispatch: &'a tracing::Dispatch,
         id: &span::Id,
-        mut f: impl FnMut(&mut api::SpanBuilder),
+        mut f: impl FnMut(&mut api::SpanBuilder, &dyn api::Sampler),
     ) {
         (self.0)(dispatch, id, &mut f)
     }
 }
 
-pub(crate) fn build_context(builder: &mut api::SpanBuilder) -> api::SpanContext {
+pub(crate) fn build_context(
+    builder: &mut api::SpanBuilder,
+    sampler: &dyn api::Sampler,
+) -> api::SpanContext {
     let span_id = builder.span_id.expect("Builders must have id");
     let (trace_id, trace_flags) = builder
         .parent_context
         .as_ref()
         .map(|parent_context| (parent_context.trace_id(), parent_context.trace_flags()))
         .unwrap_or_else(|| {
-            (
-                builder.trace_id.expect("trace_id should exist"),
-                api::TRACE_FLAG_SAMPLED,
-            )
+            let trace_id = builder.trace_id.expect("trace_id should exist");
+            // Extracting context from root span, need to sample to properly set trace flags
+            let trace_flags = if sampler
+                .should_sample(
+                    builder.parent_context.as_ref(),
+                    trace_id,
+                    builder.span_id.unwrap(),
+                    &builder.name,
+                    builder
+                        .span_kind
+                        .as_ref()
+                        .unwrap_or(&api::SpanKind::Internal),
+                    builder.attributes.as_ref().unwrap_or(&Vec::new()),
+                    builder.links.as_ref().unwrap_or(&Vec::new()),
+                )
+                .decision
+                == api::SamplingDecision::RecordAndSampled
+            {
+                api::TRACE_FLAG_SAMPLED
+            } else {
+                0
+            };
+
+            (trace_id, trace_flags)
         });
 
     api::SpanContext::new(trace_id, span_id, trace_flags, false)
@@ -103,13 +128,17 @@ where
         if let Some(parent) = attrs.parent() {
             let span = ctx.span(parent).expect("Span not found, this is a bug");
             let mut extensions = span.extensions_mut();
-            extensions.get_mut::<api::SpanBuilder>().map(build_context)
+            extensions
+                .get_mut::<api::SpanBuilder>()
+                .map(|b| build_context(b, self.sampler.as_ref()))
         // Else if the span is inferred from context, look up any available current span.
         } else if attrs.is_contextual() {
             ctx.current_span().id().and_then(|span_id| {
                 let span = ctx.span(span_id).expect("Span not found, this is a bug");
                 let mut extensions = span.extensions_mut();
-                extensions.get_mut::<api::SpanBuilder>().map(build_context)
+                extensions
+                    .get_mut::<api::SpanBuilder>()
+                    .map(|b| build_context(b, self.sampler.as_ref()))
             })
         // Explicit root spans should have no parent context.
         } else {
@@ -135,11 +164,12 @@ where
     ///     })
     ///     .init().expect("Error initializing Jaeger exporter");
     ///
+    /// let sampler = sdk::Sampler::Always;
     /// // Build a provider from the jaeger exporter that always samples.
     /// let provider = sdk::Provider::builder()
     ///     .with_simple_exporter(exporter)
     ///     .with_config(sdk::Config {
-    ///         default_sampler: Box::new(sdk::Sampler::Always),
+    ///         default_sampler: Box::new(sampler),
     ///         ..Default::default()
     ///     })
     ///     .build();
@@ -148,16 +178,17 @@ where
     /// let tracer = provider.get_tracer("component-name");
     ///
     /// // Create a layer with the configured tracer
-    /// let otel_layer = OpenTelemetryLayer::with_tracer(tracer);
+    /// let otel_layer = OpenTelemetryLayer::new(tracer, sampler);
     ///
     /// // Use the tracing subscriber `Registry`, or any other subscriber
     /// // that impls `LookupSpan`
     /// let _subscriber = Registry::default()
     ///     .with(otel_layer);
     /// ```
-    pub fn with_tracer(tracer: T) -> Self {
+    pub fn new<SA: api::Sampler + 'static>(tracer: T, sampler: SA) -> Self {
         OpenTelemetryLayer {
             tracer,
+            sampler: Box::new(sampler),
             get_context: WithContext(Self::get_context),
             _registry: marker::PhantomData,
         }
@@ -166,8 +197,12 @@ where
     fn get_context(
         dispatch: &tracing::Dispatch,
         id: &span::Id,
-        f: &mut dyn FnMut(&mut api::SpanBuilder),
+        f: &mut dyn FnMut(&mut api::SpanBuilder, &dyn api::Sampler),
     ) {
+        let sampler = &dispatch
+            .downcast_ref::<Self>()
+            .expect("subscriber should downcast to self; this is a bug!")
+            .sampler;
         let subscriber = dispatch
             .downcast_ref::<S>()
             .expect("subscriber should downcast to expected type; this is a bug!");
@@ -177,7 +212,7 @@ where
 
         let mut extensions = span.extensions_mut();
         if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
-            f(builder);
+            f(builder, sampler.as_ref());
         }
     }
 }

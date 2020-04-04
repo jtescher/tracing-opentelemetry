@@ -35,7 +35,7 @@ fn main() {
     let tracer = sdk::Provider::default().get_tracer("component_name");
 
     // Create a new OpenTelemetry tracing layer
-    let telemetry = OpenTelemetryLayer::with_tracer(tracer);
+    let telemetry = OpenTelemetryLayer::new(tracer, sdk::Sampler::Always);
 
     let subscriber = Registry::default().with(telemetry);
 

@@ -9,6 +9,7 @@
 //! extern crate tracing;
 //!
 //! use opentelemetry::{api::Provider, sdk};
+//! use opentelemetry::sdk::Sampler;
 //! use tracing_opentelemetry::OpenTelemetryLayer;
 //! use tracing_subscriber::{Layer, Registry};
 //! use tracing_subscriber::layer::SubscriberExt;
@@ -18,7 +19,7 @@
 //!     let tracer = sdk::Provider::default().get_tracer("service_name");
 //!
 //!     // Create a new OpenTelemetry tracing layer
-//!     let telemetry = OpenTelemetryLayer::with_tracer(tracer);
+//!     let telemetry = OpenTelemetryLayer::new(tracer, Sampler::Always);
 //!
 //!     let subscriber = Registry::default().with(telemetry);
 //!

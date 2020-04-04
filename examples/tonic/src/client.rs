@@ -21,16 +21,17 @@ fn tracing_init() -> Result<(), Box<dyn std::error::Error>> {
         })
         .init()?;
 
+    let sampler = Sampler::Always;
     let provider = sdk::Provider::builder()
         .with_simple_exporter(exporter)
         .with_config(sdk::Config {
-            default_sampler: Box::new(Sampler::Always),
+            default_sampler: Box::new(sampler),
             ..Default::default()
         })
         .build();
 
     let tracer = provider.get_tracer("my-tracer");
-    let telemetry = OpenTelemetryLayer::with_tracer(tracer);
+    let telemetry = OpenTelemetryLayer::new(tracer, sampler);
 
     let subscriber = Registry::default()
         // add the OpenTelemetry subscriber layer

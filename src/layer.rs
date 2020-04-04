@@ -200,7 +200,9 @@ where
         builder.parent_context = self.parent_context(attrs, &ctx);
 
         // Ensure trace id exists so children are matched properly.
-        if builder.parent_context.is_none() {
+        if let Some(parent_context) = &builder.parent_context {
+            builder.trace_id = Some(parent_context.trace_id());
+        } else {
             builder.trace_id = Some(api::TraceId::from_u128(rand::random()));
         }
 

@@ -11,6 +11,7 @@ pub trait OpenTelemetrySpanExt {
     /// use opentelemetry::api::{self, HttpTextFormat};
     /// use tracing_opentelemetry::OpenTelemetrySpanExt;
     /// use std::collections::HashMap;
+    /// use tracing::Span;
     ///
     /// // Example carrier, could be a framework header map that impls `api::Carrier`.
     /// let mut carrier = HashMap::new();
@@ -25,15 +26,19 @@ pub trait OpenTelemetrySpanExt {
     /// let app_root = tracing::span!(tracing::Level::INFO, "app_start");
     ///
     /// // Assign parent trace from external context
-    /// app_root.set_opentelemetry_parent(parent_context);
+    /// app_root.set_parent(parent_context);
+    ///
+    /// // Or if the current span has been created elsewhere:
+    /// Span::current().set_parent(propagator.extract(&carrier));
     /// ```
-    fn set_opentelemetry_parent(&self, span_context: api::SpanContext);
+    fn set_parent(&self, span_context: api::SpanContext);
 
     /// Extracts an `OpenTelemetry` context from `self`.
     ///
     /// ```rust
     /// use opentelemetry::api;
     /// use tracing_opentelemetry::OpenTelemetrySpanExt;
+    /// use tracing::Span;
     ///
     /// fn make_request(span_context: api::SpanContext) {
     ///     // perform external request after injecting context
@@ -46,29 +51,32 @@ pub trait OpenTelemetrySpanExt {
     ///
     /// // To include tracing span context in client requests from _this_ app,
     /// // extract the current OpenTelemetry span context.
-    /// make_request(app_root.opentelemetry_context())
+    /// make_request(app_root.context());
+    ///
+    /// // Or if the current span has been created elsewhere:
+    /// make_request(Span::current().context())
     /// ```
-    fn opentelemetry_context(&self) -> api::SpanContext;
+    fn context(&self) -> api::SpanContext;
 }
 
 impl OpenTelemetrySpanExt for tracing::Span {
-    fn set_opentelemetry_parent(&self, parent_context: api::SpanContext) {
+    fn set_parent(&self, parent_context: api::SpanContext) {
         self.with_subscriber(move |(id, subscriber)| {
+            let mut parent_context = Some(parent_context);
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, move |otel_info| {
-                    otel_info.trace_id = parent_context.trace_id();
-                    otel_info.builder.parent_context = Some(parent_context.clone());
+                get_context.with_context(subscriber, id, move |builder| {
+                    builder.parent_context = parent_context.take()
                 });
             }
         });
     }
 
-    fn opentelemetry_context(&self) -> api::SpanContext {
+    fn context(&self) -> api::SpanContext {
         let mut span_context = None;
         self.with_subscriber(|(id, subscriber)| {
             if let Some(get_context) = subscriber.downcast_ref::<WithContext>() {
-                get_context.with_context(subscriber, id, |otel_info| {
-                    span_context = Some(build_context(otel_info));
+                get_context.with_context(subscriber, id, |builder| {
+                    span_context = Some(build_context(builder));
                 })
             }
         });

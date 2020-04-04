@@ -6,6 +6,7 @@ use opentelemetry::{api, global};
 use std::collections::HashMap;
 use tracing_opentelemetry::{OpenTelemetryLayer, OpenTelemetrySpanExt};
 use tracing_subscriber::{Layer, Registry};
+use tracing_subscriber::layer::SubscriberExt;
 
 fn make_request(_span_context: api::SpanContext) {
     // perform external request after injecting context
@@ -26,7 +27,7 @@ fn build_example_carrier() -> HashMap<&'static str, String> {
 fn main() {
     let tracer = global::trace_provider().get_tracer("example");
     let opentelemetry = OpenTelemetryLayer::with_tracer(tracer);
-    let subscriber = opentelemetry.with_subscriber(Registry::default());
+    let subscriber = Registry::default().with(opentelemetry);
 
     // Propagator can be swapped with trace context propagator binary propagator, etc.
     let propagator = api::B3Propagator::new(true);
@@ -39,10 +40,10 @@ fn main() {
         let app_root = span!(tracing::Level::INFO, "app_start");
 
         // Assign parent trace from external context
-        app_root.set_opentelemetry_parent(parent_context);
+        app_root.set_parent(parent_context);
 
         // To include tracing span context in client requests from _this_ app,
-        // use `opentelemetry_context` to extract the current OpenTelemetry span context.
-        make_request(app_root.opentelemetry_context());
+        // use `context` to extract the current OpenTelemetry span context.
+        make_request(app_root.context());
     });
 }

@@ -4,7 +4,7 @@ use opentelemetry::api::{B3Propagator, HttpTextFormat, KeyValue, Provider};
 use opentelemetry::sdk::Sampler;
 use opentelemetry::{api, sdk};
 use tracing_opentelemetry::{OpenTelemetryLayer, OpenTelemetrySpanExt};
-use tracing_subscriber::{Layer, Registry};
+use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -30,9 +30,15 @@ fn tracing_init() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let tracer = provider.get_tracer("my-tracer");
-    let opentelemetry = OpenTelemetryLayer::with_tracer(tracer);
+    let telemetry = OpenTelemetryLayer::with_tracer(tracer);
 
-    let subscriber = opentelemetry.with_subscriber(Registry::default());
+    let subscriber = Registry::default()
+        // add the OpenTelemetry subscriber layer
+        .with(telemetry)
+        // add a logging layer
+        .with(tracing_subscriber::fmt::Layer::default())
+        // add RUST_LOG-based filtering
+        .with(tracing_subscriber::EnvFilter::from_default_env());
     tracing::subscriber::set_global_default(subscriber)?;
 
     Ok(())
@@ -60,18 +66,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = GreeterClient::connect("http://[::1]:50051").await?;
     let propagator = B3Propagator::new(true);
     let request_span = tracing::info_span!("client-request");
+    let _guard = request_span.enter();
 
     let mut request = tonic::Request::new(HelloRequest {
         name: "Tonic".into(),
     });
     propagator.inject(
-        request_span.opentelemetry_context(),
+        request_span.context(),
         &mut TonicMetadataMapCarrier(request.metadata_mut()),
     );
 
     let response = client.say_hello(request).await?;
 
-    println!("RESPONSE={:?}", response);
-
+    tracing::debug!(response = ?response, "response-received");
     Ok(())
 }

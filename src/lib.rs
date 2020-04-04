@@ -11,15 +11,16 @@
 //! use opentelemetry::{api::Provider, sdk};
 //! use tracing_opentelemetry::OpenTelemetryLayer;
 //! use tracing_subscriber::{Layer, Registry};
+//! use tracing_subscriber::layer::SubscriberExt;
 //!
 //! fn main() {
 //!     // Create a new tracer
 //!     let tracer = sdk::Provider::default().get_tracer("service_name");
 //!
-//!     // Create a new tracing layer
-//!     let layer = OpenTelemetryLayer::with_tracer(tracer);
+//!     // Create a new OpenTelemetry tracing layer
+//!     let telemetry = OpenTelemetryLayer::with_tracer(tracer);
 //!
-//!     let subscriber = layer.with_subscriber(Registry::default());
+//!     let subscriber = Registry::default().with(telemetry);
 //!
 //!     // Trace executed code
 //!     tracing::subscriber::with_default(subscriber, || {

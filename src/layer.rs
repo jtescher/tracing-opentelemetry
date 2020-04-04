@@ -1,5 +1,4 @@
 use opentelemetry::api;
-use opentelemetry::api::SpanContext;
 use std::any::TypeId;
 use std::fmt;
 use std::marker;
@@ -26,7 +25,7 @@ pub struct OpenTelemetryLayer<S, T: api::Tracer> {
 //
 // See https://github.com/tokio-rs/tracing/blob/4dad420ee1d4607bad79270c1520673fa6266a3d/tracing-error/src/layer.rs
 pub(crate) struct WithContext(
-    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&mut OpenTelemetrySpanInfo)),
+    fn(&tracing::Dispatch, &span::Id, f: &mut dyn FnMut(&mut api::SpanBuilder)),
 );
 
 impl WithContext {
@@ -36,57 +35,51 @@ impl WithContext {
         &self,
         dispatch: &'a tracing::Dispatch,
         id: &span::Id,
-        mut f: impl FnMut(&mut OpenTelemetrySpanInfo),
+        mut f: impl FnMut(&mut api::SpanBuilder),
     ) {
         (self.0)(dispatch, id, &mut f)
     }
 }
 
-/// Span extension for tracking OpenTelemetry data
-pub(crate) struct OpenTelemetrySpanInfo {
-    /// Managing a trace id here is necessary for linking spans that do not
-    /// have an external parent.
-    pub(crate) trace_id: api::TraceId,
-    /// SpanBuilder can be used to accumulate state during tracing operations
-    pub(crate) builder: api::SpanBuilder,
-}
-
-pub(crate) fn build_context(otel_info: &mut OpenTelemetrySpanInfo) -> api::SpanContext {
-    let span_id = otel_info.builder.span_id.expect("Builders must have id");
-    let (trace_id, trace_flags) = otel_info
-        .builder
+pub(crate) fn build_context(builder: &mut api::SpanBuilder) -> api::SpanContext {
+    let span_id = builder.span_id.expect("Builders must have id");
+    let (trace_id, trace_flags) = builder
         .parent_context
         .as_ref()
         .map(|parent_context| (parent_context.trace_id(), parent_context.trace_flags()))
-        .unwrap_or((otel_info.trace_id, api::TRACE_FLAG_SAMPLED));
+        .unwrap_or((
+            builder.trace_id.expect("trace_id should exist"),
+            api::TRACE_FLAG_SAMPLED,
+        ));
 
     api::SpanContext::new(trace_id, span_id, trace_flags, false)
 }
 
-struct SpanEventVisitor<'a>(&'a mut OpenTelemetrySpanInfo);
+struct SpanEventVisitor<'a>(&'a mut api::Event);
 
 impl<'a> field::Visit for SpanEventVisitor<'a> {
     /// Record events on the underlying OpenTelemetry `Span`.
     fn record_debug(&mut self, field: &field::Field, value: &dyn fmt::Debug) {
-        let event = api::Event::with_name(format!("{} = {:?}; ", field.name(), value));
-        if let Some(events) = &mut self.0.builder.message_events {
-            events.push(event);
+        if field.name() == "message" {
+            self.0.name = format!("{:?}", value);
         } else {
-            self.0.builder.message_events = Some(vec![event]);
+            self.0
+                .attributes
+                .push(api::Key::new(field.name()).string(format!("{:?}", value)));
         }
     }
 }
 
-struct SpanAttributeVisitor<'a>(&'a mut OpenTelemetrySpanInfo);
+struct SpanAttributeVisitor<'a>(&'a mut api::SpanBuilder);
 
 impl<'a> field::Visit for SpanAttributeVisitor<'a> {
     /// Set attributes on the underlying OpenTelemetry `Span`.
     fn record_debug(&mut self, field: &field::Field, value: &dyn fmt::Debug) {
         let attribute = api::Key::new(field.name()).string(format!("{:?}", value));
-        if let Some(attributes) = &mut self.0.builder.attributes {
+        if let Some(attributes) = &mut self.0.attributes {
             attributes.push(attribute);
         } else {
-            self.0.builder.attributes = Some(vec![attribute]);
+            self.0.attributes = Some(vec![attribute]);
         }
     }
 }
@@ -108,17 +101,13 @@ where
         if let Some(parent) = attrs.parent() {
             let span = ctx.span(parent).expect("Span not found, this is a bug");
             let mut extensions = span.extensions_mut();
-            extensions
-                .get_mut::<OpenTelemetrySpanInfo>()
-                .map(build_context)
+            extensions.get_mut::<api::SpanBuilder>().map(build_context)
         // Else if the span is inferred from context, look up any available current span.
         } else if attrs.is_contextual() {
             ctx.current_span().id().and_then(|span_id| {
                 let span = ctx.span(span_id).expect("Span not found, this is a bug");
                 let mut extensions = span.extensions_mut();
-                extensions
-                    .get_mut::<OpenTelemetrySpanInfo>()
-                    .map(build_context)
+                extensions.get_mut::<api::SpanBuilder>().map(build_context)
             })
         // Explicit root spans should have no parent context.
         } else {
@@ -133,6 +122,7 @@ where
     /// use opentelemetry::{api::Provider, global, sdk};
     /// use tracing_opentelemetry::OpenTelemetryLayer;
     /// use tracing_subscriber::{Layer, Registry};
+    /// use tracing_subscriber::layer::SubscriberExt;
     ///
     /// // Create a jaeger exporter for a `trace-demo` service.
     /// let exporter = opentelemetry_jaeger::Exporter::builder()
@@ -160,7 +150,7 @@ where
     ///
     /// // Use the tracing subscriber `Registry`, or any other subscriber
     /// // that impls `LookupSpan`
-    /// let _subscriber = Registry::default())
+    /// let _subscriber = Registry::default()
     ///     .with(otel_layer);
     /// ```
     pub fn with_tracer(tracer: T) -> Self {
@@ -174,7 +164,7 @@ where
     fn get_context(
         dispatch: &tracing::Dispatch,
         id: &span::Id,
-        f: &mut dyn FnMut(&mut OpenTelemetrySpanInfo),
+        f: &mut dyn FnMut(&mut api::SpanBuilder),
     ) {
         let subscriber = dispatch
             .downcast_ref::<S>()
@@ -184,8 +174,8 @@ where
             .expect("registry should have a span for the current ID");
 
         let mut extensions = span.extensions_mut();
-        if let Some(otel_info) = extensions.get_mut::<OpenTelemetrySpanInfo>() {
-            f(otel_info);
+        if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
+            f(builder);
         }
     }
 }
@@ -210,23 +200,20 @@ where
         builder.parent_context = self.parent_context(attrs, &ctx);
 
         // Ensure trace id exists so children are matched properly.
-        let trace_id = builder
-            .parent_context
-            .as_ref()
-            .map(|ctx| ctx.trace_id())
-            .unwrap_or_else(|| api::TraceId::from_u128(rand::random()));
-        let mut otel_info = OpenTelemetrySpanInfo { trace_id, builder };
+        if builder.parent_context.is_none() {
+            builder.trace_id = Some(api::TraceId::from_u128(rand::random()));
+        }
 
-        attrs.record(&mut SpanAttributeVisitor(&mut otel_info));
-        extensions.insert(otel_info);
+        attrs.record(&mut SpanAttributeVisitor(&mut builder));
+        extensions.insert(builder);
     }
 
     /// Record values for the given span.
     fn on_record(&self, id: &Id, values: &Record<'_>, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        if let Some(otel_info) = extensions.get_mut::<OpenTelemetrySpanInfo>() {
-            values.record(&mut SpanEventVisitor(otel_info));
+        if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
+            values.record(&mut SpanAttributeVisitor(builder));
         }
     }
 
@@ -236,8 +223,23 @@ where
         if let Some(span_id) = ctx.current_span().id() {
             let span = ctx.span(span_id).expect("Span not found, this is a bug");
             let mut extensions = span.extensions_mut();
-            if let Some(otel_info) = extensions.get_mut::<OpenTelemetrySpanInfo>() {
-                event.record(&mut SpanEventVisitor(otel_info));
+            if let Some(builder) = extensions.get_mut::<api::SpanBuilder>() {
+                let mut otel_event = api::Event::new(
+                    String::new(),
+                    SystemTime::now(),
+                    vec![
+                        api::Key::new("level").string(event.metadata().level().to_string()),
+                        api::Key::new("target").string(event.metadata().target()),
+                    ],
+                );
+
+                event.record(&mut SpanEventVisitor(&mut otel_event));
+
+                if let Some(ref mut events) = builder.message_events {
+                    events.push(otel_event);
+                } else {
+                    builder.message_events = Some(vec![otel_event]);
+                }
             }
         };
     }
@@ -246,20 +248,9 @@ where
     fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
         let span = ctx.span(&id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        if let Some(otel_info) = extensions.remove::<OpenTelemetrySpanInfo>() {
+        if let Some(builder) = extensions.remove::<api::SpanBuilder>() {
             // Assign end time, build and start span, drop span to export
-            let mut builder = otel_info.builder.with_end_time(SystemTime::now());
-            if builder.parent_context.is_none() {
-                // Ensure stable trace id through parent (parent span id is ignored)
-                builder.parent_context = Some(SpanContext::new(
-                    otel_info.trace_id,
-                    // TODO: allow builder to set trace id instead of relying on parent
-                    api::SpanId::from_u64(1),
-                    api::TRACE_FLAG_SAMPLED,
-                    false,
-                ))
-            }
-            builder.start(&self.tracer);
+            builder.with_end_time(SystemTime::now()).start(&self.tracer);
         }
     }
 

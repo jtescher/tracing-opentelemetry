@@ -1,6 +1,6 @@
 //! # Tracing OpenTelemetry
 //!
-//! An opentelemetry layer for the [tracing] library.
+//! An OpenTelemetry layer for the [tracing] library.
 //!
 //! [tracing]: https://github.com/tokio-rs/tracing
 //!
@@ -9,17 +9,18 @@
 //! extern crate tracing;
 //!
 //! use opentelemetry::{api::Provider, sdk};
-//! use tracing_opentelemetry::OpentelemetryLayer;
+//! use tracing_opentelemetry::OpenTelemetryLayer;
 //! use tracing_subscriber::{Layer, Registry};
+//! use tracing_subscriber::layer::SubscriberExt;
 //!
 //! fn main() {
 //!     // Create a new tracer
 //!     let tracer = sdk::Provider::default().get_tracer("service_name");
 //!
-//!     // Create a new tracing layer
-//!     let layer = OpentelemetryLayer::with_tracer(tracer);
+//!     // Create a new OpenTelemetry tracing layer
+//!     let telemetry = OpenTelemetryLayer::with_tracer(tracer);
 //!
-//!     let subscriber = layer.with_subscriber(Registry::default());
+//!     let subscriber = Registry::default().with(telemetry);
 //!
 //!     // Trace executed code
 //!     tracing::subscriber::with_default(subscriber, || {
@@ -35,5 +36,8 @@
 
 /// Implementation of the trace::Layer as a source of OpenTelemetry data.
 mod layer;
+/// Span extension which enables OpenTelemetry span context management.
+mod span_ext;
 
-pub use layer::OpentelemetryLayer;
+pub use layer::OpenTelemetryLayer;
+pub use span_ext::OpenTelemetrySpanExt;

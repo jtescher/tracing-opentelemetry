@@ -1,18 +1,20 @@
-# Tracing Opentelemetry
+# Tracing OpenTelemetry
 
 [![Crates.io: tracing-opentelemetry](https://img.shields.io/crates/v/tracing-opentelemetry.svg)](https://crates.io/crates/tracing-opentelemetry)
 [![Documentation](https://docs.rs/tracing-opentelemetry/badge.svg)](https://docs.rs/tracing-opentelemetry)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)
 
-An opentelemetry layer for the [tracing] library.
+An OpenTelemetry layer for the [tracing] library.
 
 [tracing]: https://github.com/tokio-rs/tracing
 
 ## Tracers
 
-Currently supports the Jaeger exporter via [opentelemetry-jaeger].
+Currently supports the Jaeger exporter via [opentelemetry-jaeger] and Zipkin
+via [opentelemetry-zipkin].
 
 [opentelemetry-jaeger]: https://github.com/open-telemetry/opentelemetry-rust/tree/master/opentelemetry-jaeger
+[opentelemetry-zipkin]: https://github.com/open-telemetry/opentelemetry-rust/tree/master/opentelemetry-zipkin
 
 Examples
 --------
@@ -24,17 +26,18 @@ Examples
 extern crate tracing;
 
 use opentelemetry::{api::Provider, sdk};
-use tracing_opentelemetry::OpentelemetryLayer;
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{Layer, Registry};
+use tracing_subscriber::layer::SubscriberExt;
 
 fn main() {
     // Create a new tracer
     let tracer = sdk::Provider::default().get_tracer("component_name");
 
-    // Create a new tracing layer
-    let layer = OpentelemetryLayer::with_tracer(tracer);
+    // Create a new OpenTelemetry tracing layer
+    let telemetry = OpenTelemetryLayer::with_tracer(tracer);
 
-    let subscriber = layer.with_subscriber(Registry::default());
+    let subscriber = Registry::default().with(telemetry);
 
     // Trace executed code
     tracing::subscriber::with_default(subscriber, || {
@@ -46,7 +49,7 @@ fn main() {
 }
 ```
 
-### Executes `report.rs` example
+### Execute `report.rs` example
 
 ```console
 # Run jaeger in background

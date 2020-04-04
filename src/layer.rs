@@ -47,10 +47,12 @@ pub(crate) fn build_context(builder: &mut api::SpanBuilder) -> api::SpanContext 
         .parent_context
         .as_ref()
         .map(|parent_context| (parent_context.trace_id(), parent_context.trace_flags()))
-        .unwrap_or((
-            builder.trace_id.expect("trace_id should exist"),
-            api::TRACE_FLAG_SAMPLED,
-        ));
+        .unwrap_or_else(|| {
+            (
+                builder.trace_id.expect("trace_id should exist"),
+                api::TRACE_FLAG_SAMPLED,
+            )
+        });
 
     api::SpanContext::new(trace_id, span_id, trace_flags, false)
 }
@@ -200,9 +202,7 @@ where
         builder.parent_context = self.parent_context(attrs, &ctx);
 
         // Ensure trace id exists so children are matched properly.
-        if let Some(parent_context) = &builder.parent_context {
-            builder.trace_id = Some(parent_context.trace_id());
-        } else {
+        if builder.parent_context.is_none() {
             builder.trace_id = Some(api::TraceId::from_u128(rand::random()));
         }
 

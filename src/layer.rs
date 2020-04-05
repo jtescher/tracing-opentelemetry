@@ -123,8 +123,8 @@ where
     /// ```rust,no_run
     /// use opentelemetry::{api::Provider, global, sdk};
     /// use tracing_opentelemetry::OpenTelemetryLayer;
-    /// use tracing_subscriber::{Layer, Registry};
     /// use tracing_subscriber::layer::SubscriberExt;
+    /// use tracing_subscriber::Registry;
     ///
     /// // Create a jaeger exporter for a `trace-demo` service.
     /// let exporter = opentelemetry_jaeger::Exporter::builder()

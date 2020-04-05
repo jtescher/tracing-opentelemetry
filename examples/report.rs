@@ -5,7 +5,8 @@ use opentelemetry::{api::Provider, global, sdk};
 use std::{thread, time::Duration};
 use tracing_attributes::instrument;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{Layer, Registry};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Registry;
 
 #[instrument]
 #[inline]
@@ -42,7 +43,7 @@ fn main() -> thrift::Result<()> {
     init_tracer()?;
     let tracer = global::trace_provider().get_tracer("tracing");
     let opentelemetry = OpenTelemetryLayer::with_tracer(tracer);
-    let subscriber = opentelemetry.with_subscriber(Registry::default());
+    let subscriber = Registry::default().with(opentelemetry);
 
     tracing::subscriber::with_default(subscriber, || {
         let root = span!(tracing::Level::INFO, "app_start", work_units = 2);

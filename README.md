@@ -27,8 +27,8 @@ extern crate tracing;
 
 use opentelemetry::{api::Provider, sdk};
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{Layer, Registry};
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Registry;
 
 fn main() {
     // Create a new tracer

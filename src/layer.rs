@@ -235,6 +235,10 @@ where
                     ],
                 );
 
+                if builder.status_code.is_none() && *event.metadata().level() == tracing_core::Level::ERROR {
+                    builder.status_code = Some(api::StatusCode::Unknown);
+                }
+
                 event.record(&mut SpanEventVisitor(&mut otel_event));
 
                 if let Some(ref mut events) = builder.message_events {

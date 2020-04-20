@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Julian Tescher <julian@tescher.me>"]
 description = "OpenTelemetry integration for tracing"
 homepage = "https://github.com/jtescher/tracing-opentelemetry"
